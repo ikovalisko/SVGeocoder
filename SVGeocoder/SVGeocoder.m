@@ -8,7 +8,7 @@
 // http://code.google.com/apis/maps/documentation/geocoding/
 //
 
-#import "SVGeocoder.h" 
+#import "SVGeocoder.h"
 #import <MapKit/MapKit.h>
 
 #define kSVGeocoderTimeoutInterval 20
@@ -26,6 +26,7 @@ static NSString *googleMapsAPIKey;
 - (NSString*)encodedURLParameterString;
 @end
 
+static NSString *customLanguage;
 
 @interface SVGeocoder ()
 
@@ -45,7 +46,7 @@ static NSString *googleMapsAPIKey;
 
 - (void)finish;
 - (NSString*)createComponentsStringFromDictionary:(NSDictionary *)components;
-- (NSString*)createBoundsStringFromRegion:(CLRegion *)region;
+- (NSString*)createBoundsStringFromRegion:(CLCircularRegion *)region;
 
 - (void)connection:(NSURLConnection *)connection didFailWithError:(NSError *)error;
 
@@ -77,7 +78,7 @@ static NSString *googleMapsAPIKey;
     return geocoder;
 }
 
-+ (SVGeocoder *)geocode:(NSString *)address region:(CLRegion *)region completion:(SVGeocoderCompletionHandler)block {
++ (SVGeocoder *)geocode:(NSString *)address region:(CLCircularRegion *)region completion:(SVGeocoderCompletionHandler)block {
     SVGeocoder *geocoder = [[self alloc] initWithAddress:address region:region completion:block];
     [geocoder start];
     return geocoder;
@@ -89,7 +90,7 @@ static NSString *googleMapsAPIKey;
     return geocoder;
 }
 
-+ (SVGeocoder*)geocode:(NSString *)address region:(CLRegion *)region components:(NSDictionary *)components completion:(SVGeocoderCompletionHandler)block {
++ (SVGeocoder*)geocode:(NSString *)address region:(CLCircularRegion *)region components:(NSDictionary *)components completion:(SVGeocoderCompletionHandler)block {
     SVGeocoder *geocoder = [[self alloc] initWithAddress:address region:region components:components completion:block];
     [geocoder start];
     return geocoder;
@@ -104,56 +105,63 @@ static NSString *googleMapsAPIKey;
 + (void)setGoogleMapsAPIKey:(NSString *)key {
 
     googleMapsAPIKey = [key copy];
-    
+
 }
 
 #pragma mark - Public Initializers
 
 - (SVGeocoder*)initWithCoordinate:(CLLocationCoordinate2D)coordinate completion:(SVGeocoderCompletionHandler)block {
-    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys: 
+    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                        [NSString stringWithFormat:@"%f,%f", coordinate.latitude, coordinate.longitude], @"latlng", nil];
-    
+
     return [self initWithParameters:parameters completion:block];
 }
 
 
 - (SVGeocoder*)initWithAddress:(NSString*)address completion:(SVGeocoderCompletionHandler)block {
-    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys: 
+    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                        address, @"address", nil];
-    
+
     return [self initWithParameters:parameters completion:block];
 }
 
-- (SVGeocoder*)initWithAddress:(NSString *)address region:(CLRegion *)region completion:(SVGeocoderCompletionHandler)block {
+- (SVGeocoder*)initWithAddress:(NSString *)address region:(CLCircularRegion *)region completion:(SVGeocoderCompletionHandler)block {
     NSString *bounds = [self createBoundsStringFromRegion:region];
-    
-    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys: 
-                                       address, @"address", 
+
+    NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys:
+                                       address, @"address",
                                        bounds,  @"bounds", nil];
-    
+
     return [self initWithParameters:parameters completion:block];
 }
 
 - (SVGeocoder*)initWithAddress:(NSString *)address components:(NSDictionary *)components completion:(SVGeocoderCompletionHandler)block {
     NSString *componentsValue = [self createComponentsStringFromDictionary:components];
-    
+
     NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                        address,         @"address",
                                        componentsValue, @"components", nil];
-    
+
     return [self initWithParameters:parameters completion:block];
 }
 
-- (SVGeocoder*)initWithAddress:(NSString *)address region:(CLRegion *)region components:(NSDictionary *)components completion:(SVGeocoderCompletionHandler)block {
+- (SVGeocoder*)initWithAddress:(NSString *)address region:(CLCircularRegion *)region components:(NSDictionary *)components completion:(SVGeocoderCompletionHandler)block {
     NSString *bounds = [self createBoundsStringFromRegion:region];
     NSString *componentsValue = [self createComponentsStringFromDictionary:components];
-    
+
     NSMutableDictionary *parameters = [NSMutableDictionary dictionaryWithObjectsAndKeys:
                                        address,         @"address",
                                        bounds,          @"bounds",
                                        componentsValue, @"components", nil];
-    
+
     return [self initWithParameters:parameters completion:block];
+}
+
+#pragma mark - Custom language
+
++ (void)setLanguage:(NSString *)language;
+{
+    customLanguage = language;
 }
 
 #pragma mark - Private Utility Methods
@@ -165,32 +173,36 @@ static NSString *googleMapsAPIKey;
     [self.operationRequest setTimeoutInterval:kSVGeocoderTimeoutInterval];
 
     [parameters setValue:@"true" forKey:@"sensor"];
-    [parameters setValue:[NSLocale preferredLanguages][0] forKey:@"language"];
-    
+    if (customLanguage == nil) {
+        [parameters setValue:[NSLocale preferredLanguages][0] forKey:@"language"];
+    } else {
+        [parameters setValue:customLanguage forKey:@"language"];
+    }
+
     if (googleMapsAPIKey) {
         [parameters setValue:googleMapsAPIKey forKey:@"key"];
     }
-    
+
     [self addParametersToRequest:parameters];
-        
+
     self.state = SVGeocoderStateReady;
-    
+
     return self;
 }
 
 - (void)addParametersToRequest:(NSMutableDictionary*)parameters {
-    
+
     NSMutableArray *paramStringsArray = [NSMutableArray arrayWithCapacity:[[parameters allKeys] count]];
-    
+
     for(NSString *key in [parameters allKeys]) {
         NSObject *paramValue = [parameters valueForKey:key];
 		if ([paramValue isKindOfClass:[NSString class]]) {
-			[paramStringsArray addObject:[NSString stringWithFormat:@"%@=%@", key, [(NSString *)paramValue encodedURLParameterString]]];			
+			[paramStringsArray addObject:[NSString stringWithFormat:@"%@=%@", key, [(NSString *)paramValue encodedURLParameterString]]];
 		} else {
 			[paramStringsArray addObject:[NSString stringWithFormat:@"%@=%@", key, paramValue]];
 		}
     }
-    
+
     NSString *paramsString = [paramStringsArray componentsJoinedByString:@"&"];
     NSString *baseAddress = self.operationRequest.URL.absoluteString;
     baseAddress = [baseAddress stringByAppendingFormat:@"?%@", paramsString];
@@ -198,63 +210,63 @@ static NSString *googleMapsAPIKey;
 }
 
 - (void)setTimeoutTimer:(NSTimer *)newTimer {
-    
+
     if(timeoutTimer)
         [timeoutTimer invalidate], timeoutTimer = nil;
-    
+
     if(newTimer)
         timeoutTimer = newTimer;
 }
 
 - (NSString*)createComponentsStringFromDictionary:(NSDictionary *)components {
     NSMutableArray *preparedComponents = [NSMutableArray new];
-    
+
     [components enumerateKeysAndObjectsUsingBlock:^(NSString* key, NSString* value, BOOL *stop) {
         NSString *component = [NSString stringWithFormat:@"%@:%@", key, value];
         [preparedComponents addObject:component];
     }];
-    
+
     NSString *componentsValue = [preparedComponents componentsJoinedByString:@"|"];
-    
+
     return componentsValue;
 }
 
-- (NSString*)createBoundsStringFromRegion:(CLRegion *)region {
+- (NSString*)createBoundsStringFromRegion:(CLCircularRegion *)region {
     MKCoordinateRegion coordinateRegion = MKCoordinateRegionMakeWithDistance(region.center, region.radius, region.radius);
-    
+
     NSString *bounds = [NSString stringWithFormat:@"%f,%f|%f,%f",
                          coordinateRegion.center.latitude-(coordinateRegion.span.latitudeDelta/2.0),
                          coordinateRegion.center.longitude-(coordinateRegion.span.longitudeDelta/2.0),
                          coordinateRegion.center.latitude+(coordinateRegion.span.latitudeDelta/2.0),
                         coordinateRegion.center.longitude+(coordinateRegion.span.longitudeDelta/2.0)];
-    
+
     return bounds;
 }
 
 #pragma mark - NSOperation methods
 
 - (void)start {
-    
+
     if(self.isCancelled) {
         [self finish];
         return;
     }
-    
+
     if(![NSThread isMainThread]) { // NSOperationQueue calls start from a bg thread (through GCD), but NSURLConnection already does that by itself
         [self performSelectorOnMainThread:@selector(start) withObject:nil waitUntilDone:NO];
         return;
     }
-    
+
     [self willChangeValueForKey:@"isExecuting"];
     self.state = SVGeocoderStateExecuting;
     [self didChangeValueForKey:@"isExecuting"];
-    
+
     self.operationData = [[NSMutableData alloc] init];
     self.timeoutTimer = [NSTimer scheduledTimerWithTimeInterval:kSVGeocoderTimeoutInterval target:self selector:@selector(requestTimeout) userInfo:nil repeats:NO];
-    
+
     self.operationConnection = [[NSURLConnection alloc] initWithRequest:self.operationRequest delegate:self startImmediately:NO];
     [self.operationConnection start];
-    
+
 #if !(defined SVHTTPREQUEST_DISABLE_LOGGING)
     NSLog(@"[%@] %@", self.operationRequest.HTTPMethod, self.operationRequest.URL.absoluteString);
 #endif
@@ -263,7 +275,7 @@ static NSString *googleMapsAPIKey;
 - (void)finish {
     [self.operationConnection cancel];
     operationConnection = nil;
-    
+
     [self willChangeValueForKey:@"isExecuting"];
     [self willChangeValueForKey:@"isFinished"];
     self.state = SVGeocoderStateFinished;
@@ -274,7 +286,7 @@ static NSString *googleMapsAPIKey;
 - (void)cancel {
     if([self isFinished])
         return;
-    
+
     [super cancel];
     [self callCompletionBlockWithResponse:nil error:nil];
 }
@@ -311,12 +323,12 @@ static NSString *googleMapsAPIKey;
 
 - (void)requestTimeout {
     NSURL *failingURL = self.operationRequest.URL;
-    
+
     NSDictionary *userInfo = [NSDictionary dictionaryWithObjectsAndKeys:
                               @"The operation timed out.", NSLocalizedDescriptionKey,
                               failingURL, NSURLErrorFailingURLErrorKey,
                               failingURL.absoluteString, NSURLErrorFailingURLStringErrorKey, nil];
-    
+
     NSError *timeoutError = [NSError errorWithDomain:NSURLErrorDomain code:NSURLErrorTimedOut userInfo:userInfo];
     [self connection:nil didFailWithError:timeoutError];
 }
@@ -335,17 +347,17 @@ static NSString *googleMapsAPIKey;
 - (void)connectionDidFinishLoading:(NSURLConnection *)connection {
     NSMutableArray *placemarks = nil;
     NSError *error = nil;
-    
+
     if ([[operationURLResponse MIMEType] isEqualToString:@"application/json"]) {
         if(self.operationData && self.operationData.length > 0) {
             id response = [NSData dataWithData:self.operationData];
             NSDictionary *jsonObject = [NSJSONSerialization JSONObjectWithData:response options:NSJSONReadingAllowFragments error:&error];
             NSArray *results = [jsonObject objectForKey:@"results"];
             NSString *status = [jsonObject valueForKey:@"status"];
-            
+
             if(results)
                 placemarks = [NSMutableArray arrayWithCapacity:results.count];
-            
+
             if(results.count > 0) {
                 [results enumerateObjectsUsingBlock:^(NSDictionary *result, NSUInteger idx, BOOL *stop) {
                     SVPlacemark *placemark = [[SVPlacemark alloc] initWithDictionary:result];
@@ -357,17 +369,17 @@ static NSString *googleMapsAPIKey;
                     NSDictionary *userinfo = [NSDictionary dictionaryWithObjectsAndKeys:@"Zero results returned", NSLocalizedDescriptionKey, nil];
                     error = [NSError errorWithDomain:@"SVGeocoderErrorDomain" code:SVGeocoderZeroResultsError userInfo:userinfo];
                 }
-                
+
                 else if ([status isEqualToString:@"OVER_QUERY_LIMIT"]) {
                     NSDictionary *userinfo = [NSDictionary dictionaryWithObjectsAndKeys:@"Currently rate limited. Too many queries in a short time. (Over Quota)", NSLocalizedDescriptionKey, nil];
                     error = [NSError errorWithDomain:@"SVGeocoderErrorDomain" code:SVGeocoderOverQueryLimitError userInfo:userinfo];
                 }
-                
+
                 else if ([status isEqualToString:@"REQUEST_DENIED"]) {
                     NSDictionary *userinfo = [NSDictionary dictionaryWithObjectsAndKeys:@"Request was denied. Did you remember to add the \"sensor\" parameter?", NSLocalizedDescriptionKey, nil];
                     error = [NSError errorWithDomain:@"SVGeocoderErrorDomain" code:SVGeocoderRequestDeniedError userInfo:userinfo];
                 }
-                
+
                 else if ([status isEqualToString:@"INVALID_REQUEST"]) {
                     NSDictionary *userinfo = [NSDictionary dictionaryWithObjectsAndKeys:@"The request was invalid. Was the \"address\" or \"latlng\" missing?", NSLocalizedDescriptionKey, nil];
                     error = [NSError errorWithDomain:@"SVGeocoderErrorDomain" code:SVGeocoderInvalidRequestError userInfo:userinfo];
@@ -375,7 +387,7 @@ static NSString *googleMapsAPIKey;
             }
         }
     }
-    
+
     [self callCompletionBlockWithResponse:placemarks error:error];
 }
 
@@ -386,10 +398,10 @@ static NSString *googleMapsAPIKey;
 
 - (void)callCompletionBlockWithResponse:(id)response error:(NSError *)error {
     self.timeoutTimer = nil;
-    
+
     dispatch_async(dispatch_get_main_queue(), ^{
         NSError *serverError = error;
-        
+
         if(!serverError && self.operationURLResponse.statusCode == 500) {
             serverError = [NSError errorWithDomain:NSURLErrorDomain
                                               code:NSURLErrorBadServerResponse
@@ -398,10 +410,10 @@ static NSString *googleMapsAPIKey;
                                                     self.operationRequest.URL, NSURLErrorFailingURLErrorKey,
                                                     self.operationRequest.URL.absoluteString, NSURLErrorFailingURLStringErrorKey, nil]];
         }
-        
+
         if(self.operationCompletionBlock && !self.isCancelled)
             self.operationCompletionBlock([response copy], self.operationURLResponse, serverError);
-        
+
         [self finish];
     });
 }
